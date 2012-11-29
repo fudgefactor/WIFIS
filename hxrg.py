@@ -1,5 +1,7 @@
 import pyfits
 import numpy as np
+import os
+import matplotlib.pyplot as plt
 
 class hxrg_frame:
     def __init__(self,filename):
@@ -29,10 +31,14 @@ class hxrg_frame:
         # Frame time for exposure
         self.frametime = float(hdulist[0].header['FRMTIME'])
         # Exposure time in ramp
-        self.exptime = float(hdulist[0].header['EXPTIME'])
+        self.seqnum_m = float(hdulist[0].header['SEQNUM_M'])
+        if self.seqnum_m == 0:
+            self.exptime = float(0)
+        else:
+            self.exptime = float(hdulist[0].header['INTTIME'])
         # Image data
         self.imgdata = hdulist[0].data                           
-        
+        self.imgdata_arr = np.array(self.imgdata)
         hdulist.close()
 
         # Has the image been reference corrected
@@ -43,12 +49,113 @@ class hxrg_frame:
         if (self.noutputs == 32):
             
             for i in range(32):
-                avgdrift = 0.5*(np.average(self.imgdata[0:4,i*64:i*64+64])+
-                                np.average(self.imgdata[2044:2048,i*64:i*64+64]))
+                avgdrift = 0.5*(np.average(self.imgdata[0:4,i*64:i*64+64])+np.average(self.imgdata[2044:2048,i*64:i*64+64]))
                 self.imgdata[:,i*64:i*64+64] -= avgdrift
 
             self.corrected = True
 
-                
-            
+    #returns the values of reference pixels
+    def get_ref_pixels(self):
+        self.h_reference_pixels_1 = self.imgdata[:, 0:3]
+        self.h_reference_pixels_2 = self.imgdata[:, self.nx-4:self.nx-1]
+        self.v_reference_pixels_1 = self.imgdata[0:3, :]
+        self.v_reference_pixels_2 = self.imgdata[self.ny-4:self.ny-1, :]
+        
 
+class h2rg_ramp:
+    def __init__(self, folder, ramp_parameters):
+        self.folder = folder
+        #a list containg ramp parameters, user input
+        # idx = 0: nResets
+        # idx = 1: nGroups
+        # idx = 2: nFrames
+        # idx = 3: nDrops
+        # idx = 4: nRamps
+        #will use the above parameters to generate filenames of the fits files
+        self.ramp_parameters = ramp_parameters
+        self.currentDir = os.getcwd()
+        os.chdir(folder)
+        
+    def __exit__(self):
+        os.chdir(self.currentDir)
+    
+    #reads the bad pixel mask fits. badPixelMask_FN should also include the path to the file
+    def take_badPixMask(self, badPixelMask_FN):
+        self.badPixMask = hxrg_frame(badPixelMask_FN)
+    
+    #Generage list of filenames in the ramp based on the ramp parameters
+    def generateFileList(self):
+        
+        filenames = []
+        nResets = self.ramp_parameters[0]
+        nGroups = self.ramp_parameters[1]
+        nFrames = self.ramp_parameters[2]
+        nRamps = self.ramp_parameters[4]
+        for ramp in range(0, nRamps):
+            rampStr = "%02d" % (ramp +1)
+            for reset in range(0, nResets):
+                resetStr = "%02d" % (reset+1)
+                resetFN = 'H2RG_R' + rampStr + '_M00_N' + resetStr + '.fits'
+                filenames.append(resetFN)
+            for group in range(0,  nGroups):
+                groupStr = "%02d" % (group +1)
+                for frame in range(0,  nFrames):
+                    frameStr = "%02d" % (frame+1)
+                    frameFN = 'H2RG_R' + rampStr + '_M' + groupStr + '_N' + frameStr + '.fits'
+                    filenames.append(frameFN)
+        
+        return filenames
+    
+    #read the ramp
+    def read_ramp(self):
+        fileList = self.generateFileList()
+        
+        frameList = []
+        
+        for file in fileList:
+            frameList.append(hxrg_frame(file).ref_correct_frame())
+            
+        self.frameList = frameList
+        
+    #Fit slopes for each pixel
+    def fit_slopes(self):
+        
+        pixelValue = []
+        expTime = []
+        for image in self.frameList:
+            if image.seqnum_m == 0:
+                continue
+            pixelValue.append(np.array(image.imgdata))
+            expTime.append(image.exptime)
+            print image.exptime
+        
+        #validPixels = self.badPixMask  !!!Will add later
+        validPixels[0:5, 0:5] = 1
+        
+        validPixIdx_temp = np.where(validPixels == 1)
+        
+        validPixX = validPixIdx_temp[0]
+        validPixY = validPixIdx_temp[1]
+
+        fittingData = []
+        
+        validPixIdx = zip(validPixX, validPixY)
+        pixelArray = np.array(pixelValue) #VERY RESOURCE HEAVY!!!!!!!!!!!!!!!!!
+        
+        for pixel in validPixIdx:
+            idxX = pixel[0]
+            idxY = pixel[1]
+            columnData = pixelArray[:, idxX, idxY]
+#            print columnData
+            fittingData.append(columnData)
+            
+        fittingArray = np.array(fittingData).transpose()
+#        print fittingArray.shape
+#        print expTime
+        
+        fittedParameters = np.polyfit(np.array(expTime),  fittingArray,  1)
+        
+        print zip(fittedParameters[0],  fittedParameters[1])
+        
+        
+        
