@@ -3,6 +3,8 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 
+saturation_cutoff = 30000
+
 class hxrg_frame:
     def __init__(self,filename):
         self.filename = filename
@@ -113,7 +115,7 @@ class h2rg_ramp:
         frameList = []
         
         for file in fileList:
-            frameList.append(hxrg_frame(file).ref_correct_frame())
+            frameList.append(hxrg_frame(file))
             
         self.frameList = frameList
         
@@ -122,15 +124,22 @@ class h2rg_ramp:
         
         pixelValue = []
         expTime = []
+        
+        print 'Reading fits files ...'
+        
         for image in self.frameList:
             if image.seqnum_m == 0:
                 continue
             pixelValue.append(np.array(image.imgdata))
             expTime.append(image.exptime)
             print image.exptime
+        expTime = np.array(expTime)
+        
+        print 'done'
         
         #validPixels = self.badPixMask  !!!Will add later
-        validPixels[0:5, 0:5] = 1
+        validPixels = image.imgdata*0
+        validPixels[5:500, 5:500] = 1
         
         validPixIdx_temp = np.where(validPixels == 1)
         
@@ -138,24 +147,25 @@ class h2rg_ramp:
         validPixY = validPixIdx_temp[1]
 
         fittingData = []
+        fittedParameters = []
         
         validPixIdx = zip(validPixX, validPixY)
+        
+        print 'Generating data cube ...'
         pixelArray = np.array(pixelValue) #VERY RESOURCE HEAVY!!!!!!!!!!!!!!!!!
+        print 'done'
+        
+        print 'Running slope fit ...'
         
         for pixel in validPixIdx:
             idxX = pixel[0]
             idxY = pixel[1]
             columnData = pixelArray[:, idxX, idxY]
-#            print columnData
-            fittingData.append(columnData)
-            
-        fittingArray = np.array(fittingData).transpose()
-#        print fittingArray.shape
-#        print expTime
-        
-        fittedParameters = np.polyfit(np.array(expTime),  fittingArray,  1)
-        
-        print zip(fittedParameters[0],  fittedParameters[1])
-        
-        
+            validColumnDataIdx = np.where(columnData <= saturation_cutoff)
+
+            validColumnData = list(columnData[i] for i in validColumnDataIdx)
+            validExpTime = list(expTime[i] for i in validColumnDataIdx)
+
+            fittedParameters.append(np.polyfit(validExpTime[0],  validColumnData[0], 1))
+        print 'done'
         
