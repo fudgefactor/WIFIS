@@ -2,7 +2,6 @@ import pyfits
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-import multiprocessing
 
 saturation_cutoff = 30000
 
@@ -123,9 +122,9 @@ class h2rg_ramp:
         
     #Fit slopes for each pixel
     def fit_slopes(self):
-        def worker(x, y):
-            fitted = np.polyfit(x,  y, 1, full=True)
-            return fitted
+#        def worker(x, y):
+#            fitted = np.polyfit(x,  y, 1, full=True)
+#            return fitted
         
         pixelValue = []
         expTime = []
@@ -187,10 +186,15 @@ class h2rg_ramp:
             fitted = np.polyfit(validExpTime,  validColumnData, 1, full=True)
             fittedSlope = fitted[0][0]
             fittedConst = fitted[0][1]
-            residuals = fitted[1][0]
+            if fitted[1].size == 1: #!!!!!!!!! Stop gap measure. For some reason the residual doesn't always come out right
+                residuals = fitted[1][0]
+                r2 = 1- residuals / (validColumnData.size * validColumnData.var())
+            else:
+                residuals = 0
+                r2 = 0
             fittedParameters.append([fittedSlope, fittedConst])
             self.outFrame[idxX, idxY] = fittedSlope
-            self.resFrame[idxX, idxY] = residuals
+            self.resFrame[idxX, idxY] = r2
             self.zeroFrame[idxX, idxY] = fittedConst
             
             
@@ -198,10 +202,22 @@ class h2rg_ramp:
         print 'done'
         
     def save_outframe(self, filename):
+        try:
+            os.remove(filename)
+        except OSError:
+            pass
         pyfits.writeto(filename,  self.outFrame)
         
     def save_resframe(self, filename):
+        try:
+            os.remove(filename)
+        except OSError:
+            pass
         pyfits.writeto(filename,  self.resFrame)
         
     def save_zeroframe(self, filename):
+        try:
+            os.remove(filename)
+        except OSError:
+            pass
         pyfits.writeto(filename,  self.zeroFrame)
