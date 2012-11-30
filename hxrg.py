@@ -2,6 +2,7 @@ import pyfits
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+import multiprocessing
 
 saturation_cutoff = 30000
 
@@ -122,6 +123,9 @@ class h2rg_ramp:
         
     #Fit slopes for each pixel
     def fit_slopes(self):
+        def worker(x, y):
+            fitted = np.polyfit(x,  y, 1, full=True)
+            return fitted
         
         pixelValue = []
         expTime = []
@@ -180,11 +184,14 @@ class h2rg_ramp:
 #            validColumnData = list(columnData[i] for i in validColumnDataIdx)
 #            validExpTime = list(expTime[i] for i in validColumnDataIdx)
 
-            fittedSlope, residuals,  rank,  singular_values,  recond = np.polyfit(validExpTime,  validColumnData, 1)
-            fittedParameters.append(fittedSlope)
-            self.outFrame[idxX, idxY] = fittedSlope[0]
-            self.resFrame[idxX, idxY] = residuals[0]
-            self.zeroFrame[idxX, idxY] = fittedSlope[1]
+            fitted = np.polyfit(validExpTime,  validColumnData, 1, full=True)
+            fittedSlope = fitted[0][0]
+            fittedConst = fitted[0][1]
+            residuals = fitted[1][0]
+            fittedParameters.append([fittedSlope, fittedConst])
+            self.outFrame[idxX, idxY] = fittedSlope
+            self.resFrame[idxX, idxY] = residuals
+            self.zeroFrame[idxX, idxY] = fittedConst
             
             
             
