@@ -83,7 +83,8 @@ class h2rg_ramp:
     
     #reads the bad pixel mask fits. badPixelMask_FN should also include the path to the file
     def take_badPixMask(self, badPixelMask_FN):
-        self.badPixMask = hxrg_frame(badPixelMask_FN)
+        badPixMask = pyfits.open(badPixelMask_FN)
+        self.badPixMask = badPixMask[0].data    
     
     #Generage list of filenames in the ramp based on the ramp parameters
     def generateFileList(self):
@@ -137,11 +138,10 @@ class h2rg_ramp:
         
         print 'done'
         
-        #validPixels = self.badPixMask  !!!Will add later
-        validPixels = image.imgdata*0
-        validPixels[5:500, 5:500] = 1
+        print 'Calculating bad pixel mask ... '
+        validPixels = self.badPixMask
         
-        validPixIdx_temp = np.where(validPixels == 1)
+        validPixIdx_temp = np.where(validPixels != 1)
         
         validPixX = validPixIdx_temp[0]
         validPixY = validPixIdx_temp[1]
@@ -150,6 +150,8 @@ class h2rg_ramp:
         fittedParameters = []
         
         validPixIdx = zip(validPixX, validPixY)
+        print len(validPixIdx)
+        print 'done'
         
         print 'Generating data cube ...'
         pixelArray = np.array(pixelValue) #VERY RESOURCE HEAVY!!!!!!!!!!!!!!!!!
@@ -157,15 +159,42 @@ class h2rg_ramp:
         
         print 'Running slope fit ...'
         
+        self.outFrame = validPixels * 0
+        self.resFrame = validPixels * 0
+        self.zeroFrame = validPixels * 0
+        
         for pixel in validPixIdx:
             idxX = pixel[0]
             idxY = pixel[1]
             columnData = pixelArray[:, idxX, idxY]
-            validColumnDataIdx = np.where(columnData <= saturation_cutoff)
+            SatIdx = np.where(columnData >= saturation_cutoff)
+            #deselect the saturated pixels
+            if SatIdx[0].size == 0:
+                validColumnData = columnData
+                validExpTime  = expTime
+            else:
+                lowest_satIdx = SatIdx[0][0]-1
+                validColumnData = columnData[0:lowest_satIdx] #!!!! Will not work if nRamp > 1
+                validExpTime  = expTime[0:lowest_satIdx]
 
-            validColumnData = list(columnData[i] for i in validColumnDataIdx)
-            validExpTime = list(expTime[i] for i in validColumnDataIdx)
+#            validColumnData = list(columnData[i] for i in validColumnDataIdx)
+#            validExpTime = list(expTime[i] for i in validColumnDataIdx)
 
-            fittedParameters.append(np.polyfit(validExpTime[0],  validColumnData[0], 1))
+            fittedSlope, residuals,  rank,  singular_values,  recond = np.polyfit(validExpTime,  validColumnData, 1)
+            fittedParameters.append(fittedSlope)
+            self.outFrame[idxX, idxY] = fittedSlope[0]
+            self.resFrame[idxX, idxY] = residuals[0]
+            self.zeroFrame[idxX, idxY] = fittedSlope[1]
+            
+            
+            
         print 'done'
         
+    def save_outframe(self, filename):
+        pyfits.writeto(filename,  self.outFrame)
+        
+    def save_resframe(self, filename):
+        pyfits.writeto(filename,  self.resFrame)
+        
+    def save_zeroframe(self, filename):
+        pyfits.writeto(filename,  self.zeroFrame)
